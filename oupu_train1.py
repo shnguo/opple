@@ -79,7 +79,8 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 trainer = pl.Trainer(
     max_epochs=200,
-    gpus=1,
+    # gpus=1,
+    accelerator='gpu',
     enable_model_summary=True,
     gradient_clip_val=0.1,
     limit_train_batches=30,  # coment in for training, running valiation every 30 batches
@@ -106,20 +107,20 @@ trainer.fit(
     val_dataloaders=val_dataloader,
 )
 #%%
-# best_model_path = trainer.checkpoint_callback.best_model_path
-best_model_path = 'lightning_logs\\lightning_logs\\version_0\\checkpoints\\epoch=199-step=6000.ckpt'
+best_model_path = trainer.checkpoint_callback.best_model_path
+#'lightning_logs\\lightning_logs\\version_0\\checkpoints\\epoch=182-step=5490.ckpt'
 best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
 #%%
 actuals = torch.cat([y[0] for x, y in iter(val_dataloader)])
 predictions = best_tft.predict(val_dataloader)
 (actuals - predictions).abs().mean()
-#tensor(2.8074)
+#tensor(1.9939)
 #%%
-raw_prediction, x = best_tft.predict(
-    training.filter(lambda x: (x.sku == "sku2") & (x.time_idx_first_prediction == 17)),
-    mode="quantiles",
-    return_x=True,
-)
+# raw_prediction, x = best_tft.predict(
+#     training.filter(lambda x: (x.sku == "sku2") & (x.time_idx_first_prediction == 17)),
+#     mode="quantiles",
+#     return_x=True,
+# )
 #%%
 encoder_data = new_df[lambda x: x.time_idx > x.time_idx.max() - max_encoder_length]
 last_data = new_df[lambda x: x.time_idx == x.time_idx.max()]
