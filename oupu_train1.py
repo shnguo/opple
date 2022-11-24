@@ -159,9 +159,9 @@ concat_df = pd.concat([df_agg,prediction],axis=1)
 concat_df.to_csv('result/销量预测_20221112_物料代码聚合train1.csv',encoding="utf_8_sig")
 #%%
 all_pred, all_x = best_tft.predict(new_prediction_data, mode="raw", return_x=True)
-
-
-
+interpretation = best_tft.interpret_output(all_pred, reduction="sum")
+best_tft.plot_interpretation(interpretation)
+plt.show()
 
 
 
