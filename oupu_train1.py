@@ -60,10 +60,10 @@ training = TimeSeriesDataSet(
     time_varying_known_reals=["time_idx"],
     time_varying_unknown_categoricals=[],
     time_varying_unknown_reals=['jindan','log_volume'],
-    # target_normalizer=GroupNormalizer(
-    #     groups=["sku"], transformation="softplus"
-    # ),  # use softplus and normalize by group
-    target_normalizer=TorchNormalizer(transformation='softplus'),
+    target_normalizer=GroupNormalizer(
+        groups=["sku"], transformation="softplus"
+    ),  # use softplus and normalize by group
+    # target_normalizer=TorchNormalizer(transformation='softplus'),
     add_relative_time_idx=True,
     add_target_scales=True,
     add_encoder_length=True,
@@ -138,7 +138,7 @@ for sku_ in sku:
     new_raw_predictions, new_x = best_tft.predict(
         new_prediction_data[new_prediction_data['sku'] == sku_], mode="quantiles", return_x=True
     )
-    pre =torch.squeeze(new_raw_predictions).cpu().detach().numpy().reshape(1,-1)
+    pre =torch.squeeze(new_raw_predictions).detach().numpy().reshape(1,-1)
     pred.append(pre)
     print(sku_)
 end_time=time.time()
