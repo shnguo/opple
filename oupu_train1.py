@@ -19,8 +19,11 @@ from pytorch_forecasting.metrics import SMAPE, PoissonLoss, QuantileLoss
 from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 import datetime as dt
 #%%
-data = pd.read_excel('进单历史数据_v20221122.xlsx',header=1).fillna(0)
+data = pd.read_excel('进单历史数据_v20221122.xlsx',header=1)
 data = data.iloc[:-1,1:-3]
+#%%
+data.dropna(inplace=True,axis=0)
+#%%
 df_agg = data.groupby('物料代码_加密').agg('sum')
 sku = np.array(['sku'+str(i+1) for i in range(len(df_agg))])
 wuliao_raw = df_agg.index
@@ -79,7 +82,8 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 trainer = pl.Trainer(
     max_epochs=200,
-    gpus=1,
+    # gpus=1,
+    accelerator='gpu',
     enable_model_summary=True,
     gradient_clip_val=0.1,
     limit_train_batches=30,  # coment in for training, running valiation every 30 batches
@@ -106,20 +110,22 @@ trainer.fit(
     val_dataloaders=val_dataloader,
 )
 #%%
-# best_model_path = trainer.checkpoint_callback.best_model_path
-best_model_path = 'lightning_logs\\lightning_logs\\version_0\\checkpoints\\epoch=199-step=6000.ckpt'
+best_model_path = trainer.checkpoint_callback.best_model_path
+#'lightning_logs\\lightning_logs\\version_1\\checkpoints\\epoch=127-step=3840.ckpt'
+#'lightning_logs\\lightning_logs\\version_2\\checkpoints\\epoch=160-step=4830.ckpt'
 best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
 #%%
 actuals = torch.cat([y[0] for x, y in iter(val_dataloader)])
 predictions = best_tft.predict(val_dataloader)
 (actuals - predictions).abs().mean()
-#tensor(2.8074)
+#tensor(1.8507)
+#tensor(1.8500)
 #%%
-raw_prediction, x = best_tft.predict(
-    training.filter(lambda x: (x.sku == "sku2") & (x.time_idx_first_prediction == 17)),
-    mode="quantiles",
-    return_x=True,
-)
+# raw_prediction, x = best_tft.predict(
+#     training.filter(lambda x: (x.sku == "sku2") & (x.time_idx_first_prediction == 17)),
+#     mode="quantiles",
+#     return_x=True,
+# )
 #%%
 encoder_data = new_df[lambda x: x.time_idx > x.time_idx.max() - max_encoder_length]
 last_data = new_df[lambda x: x.time_idx == x.time_idx.max()]
@@ -155,12 +161,12 @@ prediction = pd.DataFrame(prediction, columns=columns)
 prediction = prediction.astype('float64')
 df_agg = df_agg.reset_index()
 concat_df = pd.concat([df_agg,prediction],axis=1)
-concat_df.to_csv('result/销量预测_20221112_物料代码聚合train1.csv',encoding="utf_8_sig")
+concat_df.to_csv('result/销量预测_20221112_物料代码聚合train2.csv',encoding="utf_8_sig")
 #%%
 all_pred, all_x = best_tft.predict(new_prediction_data, mode="raw", return_x=True)
-
-
-
+interpretation = best_tft.interpret_output(all_pred, reduction="sum")
+best_tft.plot_interpretation(interpretation)
+plt.show()
 
 
 
