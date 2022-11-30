@@ -101,8 +101,8 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 trainer = pl.Trainer(
     max_epochs=200,
-    # gpus=1,
-    accelerator='gpu',
+    gpus=0,
+    #accelerator='gpu',
     enable_model_summary=True,
     gradient_clip_val=0.1,
     limit_train_batches=30,  # coment in for training, running valiation every 30 batches
@@ -130,10 +130,10 @@ trainer.fit(
     val_dataloaders=val_dataloader,
 )
 #%%
-best_model_path = trainer.checkpoint_callback.best_model_path
+#best_model_path = trainer.checkpoint_callback.best_model_path
 #'lightning_logs\\lightning_logs\\version_1\\checkpoints\\epoch=127-step=3840.ckpt'
 #best_model_path='lightning_logs\\lightning_logs\\version_2\\checkpoints\\epoch=160-step=4830.ckpt'
-#'lightning_logs\\lightning_logs\\version_4\\checkpoints\\epoch=94-step=2850.ckpt'
+best_model_path = 'lightning_logs\\lightning_logs\\version_4\\checkpoints\\epoch=94-step=2850.ckpt'
 best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
 #%%
 actuals = torch.cat([y[0] for x, y in iter(val_dataloader)])
