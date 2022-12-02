@@ -143,11 +143,16 @@ predictions = best_tft.predict(val_dataloader)
 #tensor(1.8500)
 #tensor(1.5248)
 #%%
-# raw_prediction, x = best_tft.predict(
-#     training.filter(lambda x: (x.sku == "sku2") & (x.time_idx_first_prediction == 17)),
-#     mode="quantiles",
-#     return_x=True,
-# )
+import psutil
+info = psutil.virtual_memory()
+# print(u'内存使用：',psutil.Process(os.getpid()).memory_info().rss)
+print(u'总内存：{:.2f}'.format(info.total/1024/1024/1024),'GB')
+print(u'已使用内存：{:.2f}'.format(info.used/1024/1024/1024),'GB')
+print(u'空余内存：{:.2f}'.format(info.free/1024/1024/1024),'GB')
+print(u'内存占比：{:.2f}'.format(info.percent/1024/1024/1024),'GB')
+del tft,price,ms
+import gc
+gc.collect()
 #%%
 encoder_data = new_df[lambda x: x.time_idx > x.time_idx.max() - max_encoder_length]
 last_data = new_df[lambda x: x.time_idx == x.time_idx.max()]
