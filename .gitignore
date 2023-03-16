@@ -4,3 +4,5 @@ ipynb_checkpoints/*
 /.DS_Store
 *.xlsx
 *.parquet
+/__pycache__
+/.ipynb_checkpoints
