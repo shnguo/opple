@@ -21,27 +21,46 @@ import datetime as dt
 #%%
 data = pd.read_excel('进单历史数据_v20221122.xlsx',header=1)
 data = data.iloc[:-1,1:-3]
-#%%
+#data = data.fillna(data.mean())
 data.dropna(inplace=True,axis=0)
-#%%
 df_agg = data.groupby('物料代码_加密').agg('sum')
+ms=df_agg.columns[1:-2]
+#df_agg = df_agg.loc[(df_agg!= 0).any(axis=1)]
+df_agg = df_agg.loc[(df_agg[[i for i in ms]]!=0).any(axis=1)]
 sku = np.array(['sku'+str(i+1) for i in range(len(df_agg))])
-wuliao_raw = df_agg.index
-new_df = []
-for t in df_agg.columns:
-    jindan = df_agg[t].values
-    month = np.array([str(t) for i in range(len(df_agg))])
-    new_data = np.stack((month,sku,jindan))
-    new_df.append(new_data)
-new_df = np.hstack(new_df)
-new_df = new_df.T
-new_df = pd.DataFrame(new_df,columns=['date','sku','jindan'])
+#%%
+def find_loweest_month(history):
+    for j in range(len(history)):
+        if np.sum(history[:j+1])==0 and np.sum(history[:j+2])>0:
+            return j+1
+new_df=[]
+for i in range(len(df_agg)):
+    index = df_agg.index[i]
+    j = find_loweest_month(df_agg.iloc[i])
+    price = df_agg.iloc[i,j:].reset_index()
+    price['sku'] = sku[i]
+    price = np.array(price)
+    new_df.append(price)
+new_df = np.vstack(new_df)
+#sku = np.array(['sku'+str(i+1) for i in range(len(df_agg))])
+# wuliao_raw = df_agg.index
+# new_df = []
+# for t in df_agg.columns:
+#     jindan = df_agg[t].values
+#     month = np.array([str(t) for i in range(len(df_agg))])
+#     new_data = np.stack((month,sku,jindan))
+#     new_df.append(new_data)
+# new_df = np.hstack(new_df)
+# new_df = new_df.T
+#%%
+new_df = pd.DataFrame(new_df,columns=['date','jindan','sku'])
 new_df['jindan'] = new_df['jindan'].astype('float')
 new_df['date'] = pd.to_datetime(new_df['date'], format="%Y%m")
 new_df["time_idx"] = new_df["date"].dt.year * 12 + new_df["date"].dt.month
 new_df["time_idx"] -= new_df["time_idx"].min()
 new_df["month"] = new_df.date.dt.month.astype(str).astype("category")
 new_df["log_volume"] = np.log(new_df.jindan + 1e-8)
+#new_df = new_df.sort_values(by=['time_idx'])
 #%%
 max_prediction_length = 2
 max_encoder_length = 12
@@ -51,7 +70,7 @@ training = TimeSeriesDataSet(
     time_idx="time_idx",
     target="jindan",
     group_ids=["sku"],
-    min_encoder_length=max_encoder_length // 2,  # keep encoder length long (as it is in the validation set)
+    min_encoder_length=3,  # keep encoder length long (as it is in the validation set)
     max_encoder_length=max_encoder_length,
     min_prediction_length=2,
     max_prediction_length=max_prediction_length,
@@ -82,8 +101,8 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 trainer = pl.Trainer(
     max_epochs=200,
-    # gpus=1,
-    accelerator='gpu',
+    gpus=0,
+    #accelerator='gpu',
     enable_model_summary=True,
     gradient_clip_val=0.1,
     limit_train_batches=30,  # coment in for training, running valiation every 30 batches
@@ -104,15 +123,17 @@ tft = TemporalFusionTransformer.from_dataset(
     reduce_on_plateau_patience=4,
 )
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
+#%%
 trainer.fit(
     tft,
     train_dataloaders=train_dataloader,
     val_dataloaders=val_dataloader,
 )
 #%%
-best_model_path = trainer.checkpoint_callback.best_model_path
+#best_model_path = trainer.checkpoint_callback.best_model_path
 #'lightning_logs\\lightning_logs\\version_1\\checkpoints\\epoch=127-step=3840.ckpt'
-#'lightning_logs\\lightning_logs\\version_2\\checkpoints\\epoch=160-step=4830.ckpt'
+#best_model_path='lightning_logs\\lightning_logs\\version_2\\checkpoints\\epoch=160-step=4830.ckpt'
+best_model_path = 'lightning_logs\\lightning_logs\\version_4\\checkpoints\\epoch=94-step=2850.ckpt'
 best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
 #%%
 actuals = torch.cat([y[0] for x, y in iter(val_dataloader)])
@@ -120,12 +141,18 @@ predictions = best_tft.predict(val_dataloader)
 (actuals - predictions).abs().mean()
 #tensor(1.8507)
 #tensor(1.8500)
+#tensor(1.5248)
 #%%
-# raw_prediction, x = best_tft.predict(
-#     training.filter(lambda x: (x.sku == "sku2") & (x.time_idx_first_prediction == 17)),
-#     mode="quantiles",
-#     return_x=True,
-# )
+import psutil
+info = psutil.virtual_memory()
+# print(u'内存使用：',psutil.Process(os.getpid()).memory_info().rss)
+print(u'总内存：{:.2f}'.format(info.total/1024/1024/1024),'GB')
+print(u'已使用内存：{:.2f}'.format(info.used/1024/1024/1024),'GB')
+print(u'空余内存：{:.2f}'.format(info.free/1024/1024/1024),'GB')
+print(u'内存占比：{:.2f}'.format(info.percent/1024/1024/1024),'GB')
+del tft,price,ms
+import gc
+gc.collect()
 #%%
 encoder_data = new_df[lambda x: x.time_idx > x.time_idx.max() - max_encoder_length]
 last_data = new_df[lambda x: x.time_idx == x.time_idx.max()]
@@ -161,7 +188,7 @@ prediction = pd.DataFrame(prediction, columns=columns)
 prediction = prediction.astype('float64')
 df_agg = df_agg.reset_index()
 concat_df = pd.concat([df_agg,prediction],axis=1)
-concat_df.to_csv('result/销量预测_20221112_物料代码聚合train2.csv',encoding="utf_8_sig")
+concat_df.to_csv('result/销量预测_20221112_物料代码聚合train4_剔除0.csv',encoding="utf_8_sig")
 #%%
 all_pred, all_x = best_tft.predict(new_prediction_data, mode="raw", return_x=True)
 interpretation = best_tft.interpret_output(all_pred, reduction="sum")
