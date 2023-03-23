@@ -16,6 +16,7 @@ from ch_input import df_to_ch
 from uuid import uuid4, UUID
 from log import get_logger
 from tqdm import tqdm
+import gc
 
 logger = get_logger(os.path.basename(__file__))
 
@@ -173,9 +174,10 @@ def train(training,train_dataloader,val_dataloader):
     logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 
     trainer = pl.Trainer(
-        # max_epochs=300,
-        max_epochs=3,
-        gpus=0,
+        max_epochs=300,
+        # max_epochs=3,
+        accelerator='gpu', 
+        devices=0,
         enable_model_summary=True,
         gradient_clip_val=0.1,
         limit_train_batches=30,  # coment in for training, running valiation every 30 batches
@@ -206,13 +208,14 @@ def train(training,train_dataloader,val_dataloader):
     return trainer
 
 def forcast_train(best_tft,df,horizon):
-    forcast_train_df = pd.DataFrame()
+    forcast_train_list = []
     for uniq_id in tqdm(df['unique_id'].unique()):
         result = best_tft.predict(df[df.unique_id == uniq_id])
         tmp_df = df[df.unique_id == uniq_id][-horizon:]
         tmp_df['y']=result[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
-        forcast_train_df = pd.concat([forcast_train_df,tmp_df],ignore_index=True)
+        forcast_train_list.append(tmp_df)
+    forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
     forcast_train_df['year'] = forcast_train_df['year'].astype('int')
     forcast_train_df['month'] = forcast_train_df['month'].astype('int')
     forcast_train_df['unique_id'] = forcast_train_df['unique_id'].astype(str)
@@ -245,13 +248,14 @@ def forcast_future(best_tft,df_filter,forecast_length):
     new_prediction_data = pd.concat([encoder_data, decoder_data], ignore_index=True)
 
     
-    forcast_future_df = pd.DataFrame()
+    forcast_future_list = []
     for uniq_id in tqdm(new_prediction_data['unique_id'].unique()):
         result = best_tft.predict(new_prediction_data[new_prediction_data.unique_id == uniq_id])
         tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
         tmp_df['y']=result[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
-        forcast_future_df = pd.concat([forcast_future_df,tmp_df],ignore_index=True)
+        forcast_future_list.append(tmp_df)
+    forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
     forcast_future_df['year'] = forcast_future_df['year'].astype('int')
     forcast_future_df['month'] = forcast_future_df['month'].astype('int')
     forcast_future_df['unique_id'] = forcast_future_df['unique_id'].astype(str)
@@ -316,7 +320,7 @@ if __name__ == '__main__':
          ],
          _type='val',
          table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
-
+    gc.collect()
     forcast_future_df = forcast_future(best_tft,df_filter,opt.forecast)
     print('Begin to insert future forcast data')
     df_to_ch(forcast_future_df,columns=[
