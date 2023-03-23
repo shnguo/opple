@@ -177,7 +177,7 @@ def train(training,train_dataloader,val_dataloader):
         max_epochs=300,
         # max_epochs=3,
         accelerator='gpu', 
-        devices=0,
+        # devices=0,
         enable_model_summary=True,
         gradient_clip_val=0.1,
         limit_train_batches=30,  # coment in for training, running valiation every 30 batches
