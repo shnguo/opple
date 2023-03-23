@@ -6,4 +6,4 @@ ipynb_checkpoints/*
 *.parquet
 /__pycache__
 /.ipynb_checkpoints
-*.csv
+/logs
