@@ -46,7 +46,9 @@ def pre_process(df):
         'cml_or_qty': 'y',
         'amont_total':'mount'
     })
-    df = df.groupby(['year_month','unique_id'], as_index=False).agg({'y':'sum', 'mount':'sum'}) 
+    category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price']))
+    logger.info(f'category_col={category_col}')
+    df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'}) 
     df['price'] = df['mount'] / df['y']
     # df = df[['datetime', 'unique_id', 'price', 'y']]
     df['year_month'] = pd.to_datetime(df['year_month'], format='%Y%m')
@@ -74,10 +76,14 @@ def pre_process(df):
     df["log_y"] = np.log(df.y + 1e-8)
     df["avg_y_by_id"] = df.groupby(["unique_id"],
                                    observed=True).y.transform("mean")
-    return df
+    for c in category_col:
+        df[c] = df[c].astype(str).astype("category")
+        df[f'avg_y_by_{c}'] = df.groupby([c],
+                                   observed=True).y.transform("mean")
+    return df,category_col
 
 
-def bulid_data_loader(data, forecast):
+def bulid_data_loader(data, forecast,category_col):
     max_prediction_length = forecast
     max_encoder_length = forecast * 4
     training_cutoff = data["time_idx"].max() - max_prediction_length
@@ -97,7 +103,7 @@ def bulid_data_loader(data, forecast):
         max_encoder_length=max_encoder_length,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
-        static_categoricals=["unique_id"],
+        static_categoricals=["unique_id"]+category_col,
         time_varying_known_categoricals=["month"],
         time_varying_known_reals=["time_idx", "price"],
         time_varying_unknown_categoricals=[],
@@ -105,7 +111,7 @@ def bulid_data_loader(data, forecast):
             "y",
             "log_y",
             "avg_y_by_id",
-        ],
+        ]+[f'avg_y_by_{c}' for c in category_col],
         target_normalizer=GroupNormalizer(
             groups=["unique_id"],
             transformation="softplus"),  # use softplus and normalize by group
@@ -308,10 +314,10 @@ def main(_uuid,file,forecast_length=4):
     df_full = pd.read_csv(file)
     logger.info('Insert opl_ori_data')
     ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
-    df_full = pre_process(df_full)
+    df_full,category_col = pre_process(df_full)
     logger.info('Insert opl_pre_data_month')
     pre_data_to_ch(df_full,_datetime=_datetime)
-    df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, forecast_length)
+    df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, forecast_length,category_col)
     print(f'baseline:{baseline_model(val_dataloader)}')
     # train_step_1(training,train_dataloader,val_dataloader)
     trainer = train(training,train_dataloader,val_dataloader)
