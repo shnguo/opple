@@ -40,11 +40,11 @@ def parse_opt():
 
 def pre_process(df):
     df = df.rename(columns={
-        '年月': 'year_month',
-        '销售凭证日期': 'datetime',
-        '物料编码': 'unique_id',
-        '进单数量': 'y',
-        '折前含税金额':'mount'
+        'ymonth': 'year_month',
+        'date': 'datetime',
+        'item_code': 'unique_id',
+        'cml_or_qty': 'y',
+        'amont_total':'mount'
     })
     df = df.groupby(['year_month','unique_id'], as_index=False).agg({'y':'sum', 'mount':'sum'}) 
     df['price'] = df['mount'] / df['y']
@@ -172,11 +172,14 @@ def train(training,train_dataloader,val_dataloader):
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=20, verbose=False, mode="min")
     lr_logger = LearningRateMonitor()  # log the learning rate
     logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
-
+    if torch.cuda.is_available():
+        accelerator='gpu'
+    else:
+        accelerator='cpu'
     trainer = pl.Trainer(
         max_epochs=300,
         # max_epochs=3,
-        accelerator='gpu', 
+        accelerator=accelerator, 
         # devices=0,
         enable_model_summary=True,
         gradient_clip_val=0.1,
@@ -264,16 +267,20 @@ def forcast_future(best_tft,df_filter,forecast_length):
 
 def ori_data_to_ch(df_full,_datetime,_uuid=None):
     df_full_copy = df_full.rename(columns={
-        '年月': 'year_month',
-        '销售凭证日期': 'date',
-        '物料编码': 'unique_id',
-        '进单数量': 'y',
-        '折前含税金额':'mount',
-        '物料描述':'description'
+        'ymonth': 'year_month',
+        'date': 'date',
+        'item_code': 'unique_id',
+        'cml_or_qty': 'y',
+        'amont_total':'mount',
+        'item_name':'description'
     })
-    df_full_copy['price'] = df_full_copy['mount']/df_full_copy['y']
+    if 'unit_price' in df_full_copy.columns:
+        df_full_copy['price'] = df_full_copy['unit_price'].astype('float')
+    else:
+        df_full_copy['price'] = df_full_copy['mount']/df_full_copy['y']
     df_full_copy['year_month'] = df_full_copy['year_month'].astype('str')
     df_full_copy['date'] = df_full_copy['date'].astype('str')
+    
     df_full_copy['y'] = df_full_copy['y'].astype('float')
     # print(df_full_copy.dtypes)
     df_to_ch(df_full_copy,columns=[
@@ -290,30 +297,28 @@ def pre_data_to_ch(df_full,_datetime,_uuid=None):
          ],
          table='opl_pre_data_month',timestamp=_datetime)
 
-
-if __name__ == '__main__':
+def main(_uuid,file,forecast_length=4):
     time_start=time.time()
     print('start')
     # _uuid = str(uuid4())
     _datetime = datetime.datetime.now()
     logger.info(f'_datetime={_datetime}')
-    opt = parse_opt()
-    _uuid = opt.uuid
+    _uuid = _uuid
     logger.info(f'_uuid={_uuid}')
-    df_full = pd.read_csv(opt.file)
+    df_full = pd.read_csv(file)
     logger.info('Insert opl_ori_data')
     ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
     df_full = pre_process(df_full)
     logger.info('Insert opl_pre_data_month')
     pre_data_to_ch(df_full,_datetime=_datetime)
-    df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, opt.forecast)
+    df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, forecast_length)
     print(f'baseline:{baseline_model(val_dataloader)}')
     # train_step_1(training,train_dataloader,val_dataloader)
     trainer = train(training,train_dataloader,val_dataloader)
     best_model_path = trainer.checkpoint_callback.best_model_path
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
     print('Begin to forcast training data')
-    forcast_train_df = forcast_train(best_tft,df_filter,opt.forecast)
+    forcast_train_df = forcast_train(best_tft,df_filter,forecast_length)
     print('Begin to insert training forcast data')
     df_to_ch(forcast_train_df,columns=[
              'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
@@ -321,7 +326,7 @@ if __name__ == '__main__':
          _type='val',
          table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
     gc.collect()
-    forcast_future_df = forcast_future(best_tft,df_filter,opt.forecast)
+    forcast_future_df = forcast_future(best_tft,df_filter,forecast_length)
     print('Begin to insert future forcast data')
     df_to_ch(forcast_future_df,columns=[
              'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
@@ -331,3 +336,9 @@ if __name__ == '__main__':
     
     time_end=time.time()
     print('time cost',time_end-time_start,'s')
+
+
+
+if __name__ == '__main__':
+    opt = parse_opt()
+    main(opt.uuid,opt.file,opt.forecast)
