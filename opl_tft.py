@@ -342,6 +342,7 @@ def main(_uuid,file,forecast_length=4):
     
     time_end=time.time()
     print('time cost',time_end-time_start,'s')
+    return forcast_train_df,forcast_future_df
 
 
 
