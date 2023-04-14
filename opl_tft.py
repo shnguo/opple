@@ -130,7 +130,7 @@ def bulid_data_loader(data, forecast,category_col):
 
 def baseline_model(val_dataloader):
     actuals = torch.cat([y for x, (y, weight) in iter(val_dataloader)])
-    baseline_predictions = Baseline().predict(val_dataloader)
+    baseline_predictions = Baseline().predict(val_dataloader).cpu()
     return (actuals - baseline_predictions).abs().mean().item()
 
 def train_step_1(training,train_dataloader,val_dataloader):
