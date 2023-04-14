@@ -304,6 +304,7 @@ def pre_data_to_ch(df_full,_datetime,_uuid=None):
          table='opl_pre_data_month',timestamp=_datetime)
 
 def main(_uuid,file,forecast_length=4):
+    global logger
     time_start=time.time()
     print('start')
     # _uuid = str(uuid4())
