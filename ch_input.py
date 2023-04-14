@@ -58,7 +58,7 @@ def df_to_ch(df,
     if _type:
         df_copy['type'] = _type
     # print(df_copy)
-    with Client(host='localhost',
+    with Client(host='192.168.0.48',
                 database='opple_tsdb',
                 user='admin',
                 password='123456',
