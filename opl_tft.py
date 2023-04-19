@@ -52,8 +52,8 @@ def pre_process(df):
     logger.info(f'category_col={category_col}')
     df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'})
     df['y'] = df['y'].apply(lambda x: x if x else 1e-8)
-    # df['price'] = df['mount'] / df['y']
-    df['price'] = df.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
+    df['price'] = df['mount'] / df['y']
+    # df['price'] = df.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
     df['year_month'] = pd.to_datetime(df['year_month'], format='%Y%m')
     df['year'] = df['year_month'].dt.year
     df['month'] = df['year_month'].dt.month
