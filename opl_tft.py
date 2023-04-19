@@ -24,7 +24,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--file',
                         type=str,
-                        default='./data/20230316.csv',
+                        default='./data/202101-202303.csv',
                         help='input file')
     parser.add_argument('--uuid',
                         type=str,
@@ -46,11 +46,13 @@ def pre_process(df):
         'cml_or_qty': 'y',
         'amont_total':'mount'
     })
-    category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price']))
+    nan_category_col = df.columns[df.isna().all()].tolist()
+    category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price'])-set(nan_category_col))
+    df.drop(columns=nan_category_col,inplace=True)  
     logger.info(f'category_col={category_col}')
     df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'}) 
-    df['price'] = df['mount'] / df['y']
-    # df = df[['datetime', 'unique_id', 'price', 'y']]
+    # df['price'] = df['mount'] / df['y']
+    df['price'] = df.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
     df['year_month'] = pd.to_datetime(df['year_month'], format='%Y%m')
     df['year'] = df['year_month'].dt.year
     df['month'] = df['year_month'].dt.month
