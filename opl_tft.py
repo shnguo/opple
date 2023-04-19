@@ -55,8 +55,8 @@ def pre_process(df):
     df['y'].fillna(0,inplace=True)
     df['mount'].fillna(0,inplace=True)
     df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'})
-    df['y'] = df['y'].apply(lambda x: x if x else 1e-8)
-    df['price'] = df['mount'] / df['y']
+    # df['y'] = df['y'].apply(lambda x: x if x else 1e-8)
+    df['price'] = df['mount'] / (df['y']+1e-8)
     # df['price'] = df.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
     df['year_month'] = pd.to_datetime(df['year_month'], format='%Y%m')
     df['year'] = df['year_month'].dt.year
@@ -72,6 +72,7 @@ def pre_process(df):
     df_year_month_id = pd.merge(df_year_month,df_id)[['year','month','unique_id']+category_col]
     print(f'df_year_month_id={len(df_year_month_id)}')
     df = pd.merge(df_year_month_id,df,how='left')
+    df['y'].fillna(0,inplace=True)
     df['year_month'] = df.apply(lambda x:datetime.date(x['year'],x.month,1),axis=1)
     df = df.sort_values(by=['unique_id','year_month'])
     df = df.groupby(['unique_id']+category_col, as_index=False).apply(lambda group: group.ffill())
