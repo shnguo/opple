@@ -44,7 +44,7 @@ def pre_process(df):
         'date': 'datetime',
         'item_code': 'unique_id',
         'cml_or_qty': 'y',
-        'amont_total':'mount'
+        'amount_total':'mount'
     })
     nan_category_col = df.columns[df.isna().all()].tolist()
     category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price'])-set(nan_category_col))
@@ -279,7 +279,7 @@ def ori_data_to_ch(df_full,_datetime,_uuid=None):
         'date': 'date',
         'item_code': 'unique_id',
         'cml_or_qty': 'y',
-        'amont_total':'mount',
+        'amount_total':'mount',
         'item_name':'description'
     })
     if 'unit_price' in df_full_copy.columns:
