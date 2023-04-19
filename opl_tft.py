@@ -48,8 +48,12 @@ def pre_process(df):
     })
     nan_category_col = df.columns[df.isna().all()].tolist()
     category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price'])-set(nan_category_col))
-    df.drop(columns=nan_category_col,inplace=True)  
+    df.drop(columns=nan_category_col,inplace=True)
+    for c in  category_col+['unique_id']:
+        df[c] = df[c].astype(str)
     logger.info(f'category_col={category_col}')
+    df['y'].fillna(0,inplace=True)
+    df['mount'].fillna(0,inplace=True)
     df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'})
     df['y'] = df['y'].apply(lambda x: x if x else 1e-8)
     df['price'] = df['mount'] / df['y']
@@ -60,16 +64,18 @@ def pre_process(df):
     # print(df.head())
     df_year = pd.DataFrame({'year':df['year'].unique(),'j':-1})
     df_month =  pd.DataFrame({'month':range(1,13),'j':-1})
-    df_id = pd.DataFrame({'unique_id':df['unique_id'].unique(),'j':-1})
+    df_id = df[['unique_id']+category_col].drop_duplicates()
+    df_id['j']=-1
+    # df_id = pd.DataFrame({'unique_id':df['unique_id'].unique(),'j':-1})
     df_year_month = pd.merge(df_year,df_month)
     df_year_month = df_year_month[~((df_year_month['year']==df['year'].max())&(df_year_month['month']>df['year_month'].max().month))]
-    df_year_month_id = pd.merge(df_year_month,df_id)[['year','month','unique_id']]
+    df_year_month_id = pd.merge(df_year_month,df_id)[['year','month','unique_id']+category_col]
+    print(f'df_year_month_id={len(df_year_month_id)}')
     df = pd.merge(df_year_month_id,df,how='left')
     df['year_month'] = df.apply(lambda x:datetime.date(x['year'],x.month,1),axis=1)
-    df['y'] =df['y'].fillna(0)
     df = df.sort_values(by=['unique_id','year_month'])
-    df = df.groupby(['unique_id'], as_index=False).apply(lambda group: group.ffill())
-    df = df.groupby(['unique_id'], as_index=False).apply(lambda group: group.bfill())
+    df = df.groupby(['unique_id']+category_col, as_index=False).apply(lambda group: group.ffill())
+    df = df.groupby(['unique_id']+category_col, as_index=False).apply(lambda group: group.bfill())
     df = df.fillna('unkown')
     df["time_idx"] = df["year"] * 12 + df["month"]
     df["time_idx"] -= df["time_idx"].min()
@@ -84,6 +90,7 @@ def pre_process(df):
         df[c] = df[c].astype(str).astype("category")
         df[f'avg_y_by_{c}'] = df.groupby([c],
                                    observed=True).y.transform("mean")
+    print(len(df),len(df['unique_id'].unique()))
     return df,category_col
 
 
