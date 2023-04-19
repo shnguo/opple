@@ -50,7 +50,8 @@ def pre_process(df):
     category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price'])-set(nan_category_col))
     df.drop(columns=nan_category_col,inplace=True)  
     logger.info(f'category_col={category_col}')
-    df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'}) 
+    df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'})
+    df['y'] = df['y'].apply(lambda x: x if x else 1e-8)
     # df['price'] = df['mount'] / df['y']
     df['price'] = df.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
     df['year_month'] = pd.to_datetime(df['year_month'], format='%Y%m')
@@ -282,11 +283,14 @@ def ori_data_to_ch(df_full,_datetime,_uuid=None):
         'amount_total':'mount',
         'item_name':'description'
     })
+    df_full_copy['y'] = df_full_copy['y'].apply(lambda x: x if x>0 else 1e-8)
+    df_full_copy['mount'] = df_full_copy['mount'].apply(lambda x: x if x>0 else 1e-8)
     df_full_copy['price'] = df_full_copy.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
     df_full_copy['year_month'] = df_full_copy['year_month'].astype('str')
     df_full_copy['date'] = df_full_copy['date'].astype('str')
     df_full_copy['unique_id'] = df_full_copy['unique_id'].astype('str')
     df_full_copy['y'] = df_full_copy['y'].astype('float')
+    
     # print(df_full_copy.dtypes)
     df_to_ch(df_full_copy,columns=[
              'unique_id', 'date', 'year_month', 'y', 'price', 'mount','description'
