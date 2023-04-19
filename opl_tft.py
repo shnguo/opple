@@ -70,6 +70,7 @@ def pre_process(df):
     df = df.sort_values(by=['unique_id','year_month'])
     df = df.groupby(['unique_id'], as_index=False).apply(lambda group: group.ffill())
     df = df.groupby(['unique_id'], as_index=False).apply(lambda group: group.bfill())
+    df = df.fillna('unkown')
     df["time_idx"] = df["year"] * 12 + df["month"]
     df["time_idx"] -= df["time_idx"].min()
     df["month"] = df["month"].astype(str).astype("category")
