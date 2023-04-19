@@ -282,13 +282,10 @@ def ori_data_to_ch(df_full,_datetime,_uuid=None):
         'amount_total':'mount',
         'item_name':'description'
     })
-    if 'unit_price' in df_full_copy.columns:
-        df_full_copy['price'] = df_full_copy['unit_price'].astype('float')
-    else:
-        df_full_copy['price'] = df_full_copy['mount']/df_full_copy['y']
+    df_full_copy['price'] = df_full_copy.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
     df_full_copy['year_month'] = df_full_copy['year_month'].astype('str')
     df_full_copy['date'] = df_full_copy['date'].astype('str')
-    
+    df_full_copy['unique_id'] = df_full_copy['unique_id'].astype('str')
     df_full_copy['y'] = df_full_copy['y'].astype('float')
     # print(df_full_copy.dtypes)
     df_to_ch(df_full_copy,columns=[
