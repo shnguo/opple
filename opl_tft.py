@@ -1,15 +1,16 @@
 import os
+import copy
 import time
 import numpy as np
 import pandas as pd
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
-from pytorch_lightning.loggers import TensorBoardLogger
+import lightning.pytorch as pl
+from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor
+from lightning.pytorch.loggers import TensorBoardLogger
 import torch
 import datetime
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
-from pytorch_forecasting.metrics import SMAPE, PoissonLoss, QuantileLoss
+from pytorch_forecasting.metrics import MAE,SMAPE, PoissonLoss, QuantileLoss
 from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 import argparse
 from ch_input import df_to_ch
@@ -17,6 +18,8 @@ from uuid import uuid4, UUID
 from log import get_logger
 from tqdm import tqdm
 import gc
+import warnings
+warnings.filterwarnings("ignore")
 torch.set_float32_matmul_precision('medium')
 logger = get_logger(os.path.basename(__file__))
 
@@ -115,8 +118,7 @@ def bulid_data_loader(data, forecast,category_col):
         time_idx="time_idx",
         target="y",
         group_ids=["unique_id"],
-        min_encoder_length=max_encoder_length //
-        2,  # keep encoder length long (as it is in the validation set)
+        min_encoder_length=max_encoder_length //2,  # keep encoder length long (as it is in the validation set)
         max_encoder_length=max_encoder_length,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
@@ -141,13 +143,15 @@ def bulid_data_loader(data, forecast,category_col):
 
     # create dataloaders for model
     batch_size = 128 # set this between 32 to 128
-    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=10)
-    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=10)
+    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
+    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
     return data,training,train_dataloader,val_dataloader
 
 def baseline_model(val_dataloader):
-    actuals = torch.cat([y for x, (y, weight) in iter(val_dataloader)])
-    baseline_predictions = Baseline().predict(val_dataloader).cpu()
+    baseline_predictions = Baseline().predict(val_dataloader, return_y=True)
+    return MAE()(baseline_predictions.output, baseline_predictions.y)
+    # actuals = torch.cat([y for x, (y, weight) in iter(val_dataloader)])
+    # baseline_predictions = Baseline().predict(val_dataloader).cpu()
     return (actuals - baseline_predictions).abs().mean().item()
 
 def train_step_1(training,train_dataloader,val_dataloader):
@@ -178,7 +182,8 @@ def train_step_1(training,train_dataloader,val_dataloader):
     )
     print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
     # find optimal learning rate
-    res = trainer.tuner.lr_find(
+    from lightning.pytorch.tuner import Tuner
+    res = Tuner(trainer).lr_find(
         tft,
         train_dataloaders=train_dataloader,
         val_dataloaders=val_dataloader,
@@ -253,9 +258,9 @@ def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
     uniq_id_list = df['unique_id'].unique()
     for uniq_id in tqdm(uniq_id_list):
         uniq_id_df = df[df.unique_id == uniq_id]
-        result = best_tft.predict(uniq_id_df)
+        result = best_tft.predict(uniq_id_df,trainer_kwargs=dict(accelerator="cpu"))
         tmp_df = df[df.unique_id == uniq_id][-horizon:]
-        tmp_df['y']=result.cpu()[0]
+        tmp_df['y']=result[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
         tmp_df['month'] = tmp_df['month'].astype('int')
@@ -307,9 +312,9 @@ def forcast_future_old(best_tft,df_filter,forecast_length):
     
     forcast_future_list = []
     for uniq_id in tqdm(new_prediction_data['unique_id'].unique()):
-        result = best_tft.predict(new_prediction_data[new_prediction_data.unique_id == uniq_id])
+        result = best_tft.predict(new_prediction_data[new_prediction_data.unique_id == uniq_id],trainer_kwargs=dict(accelerator="cpu"))
         tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
-        tmp_df['y']=result.cpu()[0]
+        tmp_df['y']=result[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         forcast_future_list.append(tmp_df)
     forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
@@ -419,12 +424,12 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     logger.info(f'_uuid={_uuid}')
     df_full = pd.read_csv(file)
     logger.info('Insert opl_ori_data')
-    ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
+    # ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
     df_full,category_col = pre_process(df_full)
     logger.info('Insert opl_pre_data_month')
-    pre_data_to_ch(df_full,_datetime=_datetime)
+    # pre_data_to_ch(df_full,_datetime=_datetime)
     df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, forecast_length,category_col)
-    print(f'baseline:{baseline_model(val_dataloader)}')
+    # print(f'baseline:{baseline_model(val_dataloader)}')
     # train_step_1(training,train_dataloader,val_dataloader)
     trainer = train(training,train_dataloader,val_dataloader)
     best_model_path = trainer.checkpoint_callback.best_model_path
