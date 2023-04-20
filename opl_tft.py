@@ -264,6 +264,7 @@ def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
             _type='val',
             table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
             forcast_train_list = []
+            gc.collect()
     if len(forcast_train_list)>0:
             forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
             df_to_ch(forcast_train_df,columns=[
@@ -358,6 +359,7 @@ def forcast_future_new(best_tft,df_filter,forecast_length,_uuid,_datetime):
             _type='future',
             table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
             forcast_future_list = []
+            gc.collect()
     if len(forcast_future_list)>0:
             forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
             df_to_ch(forcast_future_df,columns=[
@@ -379,7 +381,7 @@ def ori_data_to_ch(df_full,_datetime,_uuid=None):
     })
     df_full_copy['y'] = df_full_copy['y'].apply(lambda x: x if x>0 else 1e-8)
     df_full_copy['mount'] = df_full_copy['mount'].apply(lambda x: x if x>0 else 1e-8)
-    df_full_copy['price'] = df_full_copy.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
+    df_full_copy['price'] = df_full_copy.apply(lambda row: row['unit_price'] if row['unit_price']>0 else row['mount'] / row['y'],axis=1)
     df_full_copy['year_month'] = df_full_copy['year_month'].astype('str')
     df_full_copy['date'] = df_full_copy['date'].astype('str')
     df_full_copy['unique_id'] = df_full_copy['unique_id'].astype('str')
