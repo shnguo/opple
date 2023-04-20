@@ -343,8 +343,10 @@ def forcast_future_new(best_tft,df_filter,forecast_length,_uuid,_datetime):
 
     
     forcast_future_list = []
-    for uniq_id in tqdm(new_prediction_data['unique_id'].unique()):
-        result = best_tft.predict(new_prediction_data[new_prediction_data.unique_id == uniq_id])
+    uniq_id_list = new_prediction_data['unique_id'].unique()
+    for uniq_id in tqdm(uniq_id_list):
+        uniq_id_df = new_prediction_data[new_prediction_data.unique_id == uniq_id]
+        result = best_tft.predict(uniq_id_df)
         tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
         tmp_df['y']=result[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
