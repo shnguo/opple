@@ -195,8 +195,8 @@ def train(training,train_dataloader,val_dataloader):
     else:
         accelerator='cpu'
     trainer = pl.Trainer(
-        # max_epochs=300,
-        max_epochs=3,
+        max_epochs=300,
+        # max_epochs=3,
         accelerator=accelerator, 
         # devices=0,
         enable_model_summary=True,
