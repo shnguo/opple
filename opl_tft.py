@@ -73,6 +73,7 @@ def pre_process(df):
     print(f'df_year_month_id={len(df_year_month_id)}')
     df = pd.merge(df_year_month_id,df,how='left')
     df['y'].fillna(0,inplace=True)
+    df['mount'].fillna(0,inplace=True)
     df['year_month'] = df.apply(lambda x:datetime.date(x['year'],x.month,1),axis=1)
     df = df.sort_values(by=['unique_id','year_month'])
     df = df.groupby(['unique_id']+category_col, as_index=False).apply(lambda group: group.ffill())
