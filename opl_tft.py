@@ -17,7 +17,7 @@ from uuid import uuid4, UUID
 from log import get_logger
 from tqdm import tqdm
 import gc
-
+torch.set_float32_matmul_precision('medium')
 logger = get_logger(os.path.basename(__file__))
 
 def parse_opt():
@@ -141,8 +141,8 @@ def bulid_data_loader(data, forecast,category_col):
 
     # create dataloaders for model
     batch_size = 128 # set this between 32 to 128
-    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
-    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
+    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=10)
+    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=10)
     return data,training,train_dataloader,val_dataloader
 
 def baseline_model(val_dataloader):
