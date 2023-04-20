@@ -258,7 +258,12 @@ def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
     uniq_id_list = df['unique_id'].unique()
     for uniq_id in tqdm(uniq_id_list):
         uniq_id_df = df[df.unique_id == uniq_id]
-        result = best_tft.predict(uniq_id_df,trainer_kwargs=dict(accelerator="cpu"))
+        if torch.cuda.is_available():
+            accelerator='gpu'
+        else:
+            accelerator='cpu'
+        result = best_tft.predict(uniq_id_df,trainer_kwargs=dict(accelerator=accelerator))
+        # result = best_tft.predict(uniq_id_df)
         tmp_df = df[df.unique_id == uniq_id][-horizon:]
         tmp_df['y']=result[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
