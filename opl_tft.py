@@ -34,6 +34,10 @@ def parse_opt():
                         type=int,
                         default=4,
                         help='forecast month')
+    parser.add_argument('--pricefile',
+                        type=str,
+                        default='./data/pricefile.csv',
+                        help='input price file')
     opt = parser.parse_args()
     return opt
 
@@ -251,7 +255,7 @@ def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
         uniq_id_df = df[df.unique_id == uniq_id]
         result = best_tft.predict(uniq_id_df)
         tmp_df = df[df.unique_id == uniq_id][-horizon:]
-        tmp_df['y']=result[0]
+        tmp_df['y']=result.cpu()[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
         tmp_df['month'] = tmp_df['month'].astype('int')
@@ -305,7 +309,7 @@ def forcast_future_old(best_tft,df_filter,forecast_length):
     for uniq_id in tqdm(new_prediction_data['unique_id'].unique()):
         result = best_tft.predict(new_prediction_data[new_prediction_data.unique_id == uniq_id])
         tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
-        tmp_df['y']=result[0]
+        tmp_df['y']=result.cpu()[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         forcast_future_list.append(tmp_df)
     forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
@@ -404,7 +408,7 @@ def pre_data_to_ch(df_full,_datetime,_uuid=None):
          ],
          table='opl_pre_data_month',timestamp=_datetime)
 
-def main(_uuid,file,forecast_length=4):
+def main(_uuid,file,forecast_length=4,pricefile=None):
     global logger
     time_start=time.time()
     print('start')
@@ -450,4 +454,4 @@ def main(_uuid,file,forecast_length=4):
 
 if __name__ == '__main__':
     opt = parse_opt()
-    main(opt.uuid,opt.file,opt.forecast)
+    main(opt.uuid,opt.file,opt.forecast,opt.pricefile)
