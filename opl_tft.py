@@ -246,8 +246,10 @@ def forcast_train_old(best_tft,df,horizon):
 
 def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
     forcast_train_list = []
-    for uniq_id in tqdm(df['unique_id'].unique()):
-        result = best_tft.predict(df[df.unique_id == uniq_id])
+    uniq_id_list = df['unique_id'].unique()
+    for uniq_id in tqdm(uniq_id_list):
+        uniq_id_df = df[df.unique_id == uniq_id]
+        result = best_tft.predict(uniq_id_df)
         tmp_df = df[df.unique_id == uniq_id][-horizon:]
         tmp_df['y']=result[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
