@@ -258,7 +258,7 @@ def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
         tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
         tmp_df['model'] = 'TFT'
         forcast_train_list.append(tmp_df)
-        if len(forcast_train_list)>100:
+        if len(forcast_train_list)>2000:
             forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
             df_to_ch(forcast_train_df,columns=[
                 'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
@@ -266,7 +266,6 @@ def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
             _type='val',
             table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
             forcast_train_list = []
-            gc.collect()
     if len(forcast_train_list)>0:
             forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
             df_to_ch(forcast_train_df,columns=[
@@ -355,7 +354,7 @@ def forcast_future_new(best_tft,df_filter,forecast_length,_uuid,_datetime):
         tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
         tmp_df['model'] = 'TFT'
         forcast_future_list.append(tmp_df)
-        if len(forcast_future_list)>100:
+        if len(forcast_future_list)>2000:
             forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
             df_to_ch(forcast_future_df,columns=[
                 'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
@@ -363,7 +362,6 @@ def forcast_future_new(best_tft,df_filter,forecast_length,_uuid,_datetime):
             _type='future',
             table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
             forcast_future_list = []
-            gc.collect()
     if len(forcast_future_list)>0:
             forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
             df_to_ch(forcast_future_df,columns=[
@@ -436,7 +434,7 @@ def main(_uuid,file,forecast_length=4):
     #      _type='val',
     #      table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
     gc.collect()
-    forcast_future_new(best_tft,df_filter,forecast_length)
+    forcast_future_new(best_tft,df_filter,forecast_length,_uuid,_datetime)
     # print('Begin to insert future forcast data')
     # df_to_ch(forcast_future_df,columns=[
     #          'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
