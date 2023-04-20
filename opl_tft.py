@@ -262,10 +262,10 @@ def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
             accelerator='gpu'
         else:
             accelerator='cpu'
-        result = best_tft.predict(uniq_id_df,trainer_kwargs=dict(accelerator=accelerator))
+        result = best_tft.predict(uniq_id_df)
         # result = best_tft.predict(uniq_id_df)
         tmp_df = df[df.unique_id == uniq_id][-horizon:]
-        tmp_df['y']=result[0]
+        tmp_df['y']=result.cpu()[0]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
         tmp_df['month'] = tmp_df['month'].astype('int')
