@@ -282,9 +282,9 @@ def forcast_future(best_tft,df_filter,forecast_length,price_df=None):
     decoder_data['year_month'] = decoder_data['year_month'].dt.date
     # combine encoder and decoder data
     new_prediction_data = pd.concat([encoder_data, decoder_data], ignore_index=True)
-    # if len(price_df)>0:
-    #     new_prediction_data = pd.merge(new_prediction_data,price_df,how='left',left_on=['unique_id','year','month'],right_on=['unique_id','year','month'],suffixes=('', '_y'))
-    #     new_prediction_data['price'] = new_prediction_data.apply(lambda row:row['unit_price'] if row['unit_price']>0 else row['price'],axis=1)
+    if len(price_df)>0:
+        new_prediction_data = pd.merge(new_prediction_data,price_df,how='left',left_on=['unique_id','year','month'],right_on=['unique_id','year','month'],suffixes=('', '_y'))
+        new_prediction_data['price'] = new_prediction_data.apply(lambda row:row['unit_price'] if row['unit_price']>0 else row['price'],axis=1)
     predictions = best_tft.predict(new_prediction_data, return_x=True,return_index=True,trainer_kwargs=dict(accelerator="cpu"))
     data_length = len(predictions.index)
     forcast_future_list = []
