@@ -238,58 +238,27 @@ def train(training,train_dataloader,val_dataloader):
     )
     return trainer
 
-def forcast_train_old(best_tft,df,horizon):
+def forcast_train(best_tft,df_filter,val_dataloader,horizon):
+    predictions = best_tft.predict(val_dataloader, return_x=True,return_index=True,trainer_kwargs=dict(accelerator="cpu"))
     forcast_train_list = []
-    for uniq_id in tqdm(df['unique_id'].unique()):
-        result = best_tft.predict(df[df.unique_id == uniq_id])
-        tmp_df = df[df.unique_id == uniq_id][-horizon:]
-        tmp_df['y']=result[0]
+    data_length = len(predictions.index)
+    for index in tqdm(range(data_length)):
+        uniq_id = predictions.index.iloc[index]['unique_id']
+        tmp_df = df_filter[df_filter.unique_id == uniq_id][-horizon:]
+        tmp_df['y']=predictions.output[index]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
+        tmp_df['year'] = tmp_df['year'].astype('int')
+        tmp_df['month'] = tmp_df['month'].astype('int')
+        tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
+        tmp_df['model'] = 'TFT'
         forcast_train_list.append(tmp_df)
     forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
-    forcast_train_df['year'] = forcast_train_df['year'].astype('int')
-    forcast_train_df['month'] = forcast_train_df['month'].astype('int')
-    forcast_train_df['unique_id'] = forcast_train_df['unique_id'].astype(str)
-    forcast_train_df['model'] = 'TFT'
     return forcast_train_df
+            
 
-def forcast_train_new(best_tft,df,horizon,_uuid,_datetime):
-    forcast_train_list = []
-    uniq_id_list = df['unique_id'].unique()
-    for uniq_id in tqdm(uniq_id_list):
-        uniq_id_df = df[df.unique_id == uniq_id]
-        if torch.cuda.is_available():
-            accelerator='gpu'
-        else:
-            accelerator='cpu'
-        result = best_tft.predict(uniq_id_df)
-        # result = best_tft.predict(uniq_id_df)
-        tmp_df = df[df.unique_id == uniq_id][-horizon:]
-        tmp_df['y']=result.cpu()[0]
-        tmp_df['mount'] = tmp_df['y']*tmp_df['price']
-        tmp_df['year'] = tmp_df['year'].astype('int')
-        tmp_df['month'] = tmp_df['month'].astype('int')
-        tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
-        tmp_df['model'] = 'TFT'
-        forcast_train_list.append(tmp_df)
-        if len(forcast_train_list)>1000:
-            forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
-            df_to_ch(forcast_train_df,columns=[
-                'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
-            ],
-            _type='val',
-            table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
-            forcast_train_list = []
-    if len(forcast_train_list)>0:
-            forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
-            df_to_ch(forcast_train_df,columns=[
-                'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
-            ],
-            _type='val',
-            table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
-            forcast_train_list = []
 
-def forcast_future_old(best_tft,df_filter,forecast_length):
+
+def forcast_future(best_tft,df_filter,forecast_length,price_df=None):
     # select last 24 months from data (max_encoder_length is 24)
     max_encoder_length=forecast_length*4
     max_prediction_length = forecast_length
@@ -313,76 +282,24 @@ def forcast_future_old(best_tft,df_filter,forecast_length):
     decoder_data['year_month'] = decoder_data['year_month'].dt.date
     # combine encoder and decoder data
     new_prediction_data = pd.concat([encoder_data, decoder_data], ignore_index=True)
-
-    
+    # if len(price_df)>0:
+    #     new_prediction_data = pd.merge(new_prediction_data,price_df,how='left',left_on=['unique_id','year','month'],right_on=['unique_id','year','month'],suffixes=('', '_y'))
+    #     new_prediction_data['price'] = new_prediction_data.apply(lambda row:row['unit_price'] if row['unit_price']>0 else row['price'],axis=1)
+    predictions = best_tft.predict(new_prediction_data, return_x=True,return_index=True,trainer_kwargs=dict(accelerator="cpu"))
+    data_length = len(predictions.index)
     forcast_future_list = []
-    for uniq_id in tqdm(new_prediction_data['unique_id'].unique()):
-        result = best_tft.predict(new_prediction_data[new_prediction_data.unique_id == uniq_id],trainer_kwargs=dict(accelerator="cpu"))
+    for index in tqdm(range(data_length)):
+        uniq_id = predictions.index.iloc[index]['unique_id']
         tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
-        tmp_df['y']=result[0]
+        tmp_df['y']=predictions.output[index]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
+        tmp_df['year'] = tmp_df['year'].astype('int')
+        tmp_df['month'] = tmp_df['month'].astype('int')
+        tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
+        tmp_df['model'] = 'TFT'
         forcast_future_list.append(tmp_df)
     forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
-    forcast_future_df['year'] = forcast_future_df['year'].astype('int')
-    forcast_future_df['month'] = forcast_future_df['month'].astype('int')
-    forcast_future_df['unique_id'] = forcast_future_df['unique_id'].astype(str)
-    forcast_future_df['model'] = 'TFT'
     return forcast_future_df
-
-def forcast_future_new(best_tft,df_filter,forecast_length,_uuid,_datetime):
-    # select last 24 months from data (max_encoder_length is 24)
-    max_encoder_length=forecast_length*4
-    max_prediction_length = forecast_length
-    encoder_data = df_filter[lambda x: x.time_idx > x.time_idx.max() - max_encoder_length]
-
-    # select last known data point and create decoder data from it by repeating it and incrementing the month
-    # in a real world dataset, we should not just forward fill the covariates but specify them to account
-    # for changes in special days and prices (which you absolutely should do but we are too lazy here)
-    last_data = df_filter[lambda x: x.time_idx == x.time_idx.max()]
-    decoder_data = pd.concat(
-        [last_data.assign(year_month=lambda x: x.year_month + pd.offsets.MonthBegin(i)) for i in range(1, max_prediction_length + 1)],
-        ignore_index=True,
-    )
-
-    # add time index consistent with "data"
-    decoder_data["time_idx"] = decoder_data["year_month"].dt.year * 12 + decoder_data["year_month"].dt.month
-    decoder_data["time_idx"] += encoder_data["time_idx"].max() + 1 - decoder_data["time_idx"].min()
-
-    # adjust additional time feature(s)
-    decoder_data["month"] = decoder_data.year_month.dt.month.astype(str).astype("category")  # categories have be strings
-    decoder_data['year_month'] = decoder_data['year_month'].dt.date
-    # combine encoder and decoder data
-    new_prediction_data = pd.concat([encoder_data, decoder_data], ignore_index=True)
-
-    
-    forcast_future_list = []
-    uniq_id_list = new_prediction_data['unique_id'].unique()
-    for uniq_id in tqdm(uniq_id_list):
-        uniq_id_df = new_prediction_data[new_prediction_data.unique_id == uniq_id]
-        result = best_tft.predict(uniq_id_df)
-        tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
-        tmp_df['y']=result[0]
-        tmp_df['mount'] = tmp_df['y']*tmp_df['price']
-        tmp_df['year'] = tmp_df['year'].astype('int')
-        tmp_df['month'] = tmp_df['month'].astype('int')
-        tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
-        tmp_df['model'] = 'TFT'
-        forcast_future_list.append(tmp_df)
-        if len(forcast_future_list)>1000:
-            forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
-            df_to_ch(forcast_future_df,columns=[
-                'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
-            ],
-            _type='future',
-            table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
-            forcast_future_list = []
-    if len(forcast_future_list)>0:
-            forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
-            df_to_ch(forcast_future_df,columns=[
-                'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
-            ],
-            _type='future',
-            table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
 
 
 
@@ -418,6 +335,21 @@ def pre_data_to_ch(df_full,_datetime,_uuid=None):
          ],
          table='opl_pre_data_month',timestamp=_datetime)
 
+def pre_price_data(df):
+    df = df.rename(columns={
+        'ymonth': 'year_month',
+        'item_code': 'unique_id',
+    })
+    df['year_month'] = pd.to_datetime(df['year_month'], format='%Y%m')
+    df['year'] = df['year_month'].dt.year
+    df['month'] = df['year_month'].dt.month
+    df["month"] = df["month"].astype(str).astype("category")
+    df["year"] = df["year"].astype(str).astype("category")
+    df['unique_id'] = df['unique_id'].astype(str).astype("category")
+    df.drop_duplicates(subset=['unique_id',"month","year"],inplace=True)
+    return df
+
+
 def main(_uuid,file,forecast_length=4,pricefile=None):
     global logger
     time_start=time.time()
@@ -429,36 +361,42 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     logger.info(f'_uuid={_uuid}')
     df_full = pd.read_csv(file)
     logger.info('Insert opl_ori_data')
-    # ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
+    ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
     df_full,category_col = pre_process(df_full)
     logger.info('Insert opl_pre_data_month')
-    # pre_data_to_ch(df_full,_datetime=_datetime)
+    pre_data_to_ch(df_full,_datetime=_datetime)
     df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, forecast_length,category_col)
     # print(f'baseline:{baseline_model(val_dataloader)}')
     # train_step_1(training,train_dataloader,val_dataloader)
     trainer = train(training,train_dataloader,val_dataloader)
     best_model_path = trainer.checkpoint_callback.best_model_path
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
+    
     print('Begin to forcast training data')
-    forcast_train_new(best_tft,df_filter,forecast_length,_uuid,_datetime)
-    # print('Begin to insert training forcast data')
-    # df_to_ch(forcast_train_df,columns=[
-    #          'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
-    #      ],
-    #      _type='val',
-    #      table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
-    gc.collect()
-    forcast_future_new(best_tft,df_filter,forecast_length,_uuid,_datetime)
-    # print('Begin to insert future forcast data')
-    # df_to_ch(forcast_future_df,columns=[
-    #          'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
-    #      ],
-    #      _type='future',
-    #      table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
+    forcast_train_df = forcast_train(best_tft,df_filter,val_dataloader,forecast_length)
+    print('Begin to insert training forcast data')
+    df_to_ch(forcast_train_df,columns=[
+             'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
+         ],
+         _type='val',
+         table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
+    
+    print('Begin to forcast future data')
+    price_df=''
+    if pricefile:
+        price_df = pd.read_csv(pricefile)
+        price_df = pre_price_data(price_df)
+    forcast_future_df = forcast_future(best_tft,df_filter,forecast_length,price_df)
+    print('Begin to insert future forcast data')
+    df_to_ch(forcast_future_df,columns=[
+             'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
+         ],
+         _type='future',
+         table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
     
     time_end=time.time()
     print('time cost',time_end-time_start,'s')
-    # return forcast_train_df,forcast_future_df
+    return forcast_train_df,forcast_future_df
 
 
 
