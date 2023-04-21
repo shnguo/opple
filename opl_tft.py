@@ -178,7 +178,8 @@ def train_step_1(training,train_dataloader,val_dataloader):
         loss=QuantileLoss(),
         # reduce learning rate if no improvement in validation loss after x epochs
         reduce_on_plateau_patience=4,
-        optimizer='adam'
+        optimizer='adam',
+        log_interval=-1
     )
     print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
     # find optimal learning rate
@@ -226,7 +227,7 @@ def train(training,train_dataloader,val_dataloader):
         hidden_continuous_size=8,
         output_size=7,  # 7 quantiles by default
         loss=QuantileLoss(),
-        log_interval=10,  # uncomment for learning rate finder and otherwise, e.g. to 10 for logging every 10 batches
+        log_interval=-1,  # uncomment for learning rate finder and otherwise, e.g. to 10 for logging every 10 batches
         reduce_on_plateau_patience=4,
     )
     print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
