@@ -19,6 +19,7 @@ from log import get_logger
 from tqdm import tqdm
 import gc
 import warnings
+import json
 warnings.filterwarnings("ignore")
 torch.set_float32_matmul_precision('medium')
 logger = get_logger(os.path.basename(__file__))
@@ -31,7 +32,7 @@ def parse_opt():
                         help='input file')
     parser.add_argument('--uuid',
                         type=str,
-                        default='adc0db0d-0518-4cf3-b223-e7ab01179088',
+                        default='2023-04-23',
                         help='uuid')
     parser.add_argument('--forecast',
                         type=int,
@@ -55,6 +56,9 @@ def pre_process(df):
     })
     nan_category_col = df.columns[df.isna().all()].tolist()
     category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price'])-set(nan_category_col))
+    category_col=['big_class_id', 'pdt', 'second_pdt', 
+                  'cat_id', 'pro_series', 'office',
+                   ]
     df.drop(columns=nan_category_col,inplace=True)
     for c in  category_col+['unique_id']:
         df[c] = df[c].astype(str)
@@ -168,7 +172,7 @@ def train_step_1(training,train_dataloader,val_dataloader):
     tft = TemporalFusionTransformer.from_dataset(
         training,
         # not meaningful for finding the learning rate but otherwise very important
-        learning_rate=0.03,
+        learning_rate=0.01,
         hidden_size=16,  # most important hyperparameter apart from learning rate
         # number of attention heads. Set to up to 4 for large datasets
         attention_head_size=2,
@@ -196,6 +200,7 @@ def train_step_1(training,train_dataloader,val_dataloader):
     fig.show()
 
 def train(training,train_dataloader,val_dataloader):
+    pl.seed_everything(42)
         # configure network and trainer
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=20, verbose=False, mode="min")
     lr_logger = LearningRateMonitor()  # log the learning rate
@@ -239,13 +244,14 @@ def train(training,train_dataloader,val_dataloader):
     return trainer
 
 def forcast_train(best_tft,df_filter,val_dataloader,horizon):
-    predictions = best_tft.predict(val_dataloader, return_x=True,return_index=True,trainer_kwargs=dict(accelerator="cpu"))
+    predictions = best_tft.predict(val_dataloader, mode="raw", return_index=True,trainer_kwargs=dict(accelerator="cpu"))
     forcast_train_list = []
     data_length = len(predictions.index)
     for index in tqdm(range(data_length)):
         uniq_id = predictions.index.iloc[index]['unique_id']
         tmp_df = df_filter[df_filter.unique_id == uniq_id][-horizon:]
-        tmp_df['y']=predictions.output[index]
+        tmp_df['y_json']=[json.dumps(x) for x in np.array(predictions.output.prediction)[index].tolist()]
+        tmp_df['y']=np.array(predictions.output.prediction)[index,:,3]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
         tmp_df['month'] = tmp_df['month'].astype('int')
@@ -285,13 +291,14 @@ def forcast_future(best_tft,df_filter,forecast_length,price_df=None):
     if len(price_df)>0:
         new_prediction_data = pd.merge(new_prediction_data,price_df,how='left',left_on=['unique_id','year','month'],right_on=['unique_id','year','month'],suffixes=('', '_y'))
         new_prediction_data['price'] = new_prediction_data.apply(lambda row:row['unit_price'] if row['unit_price']>0 else row['price'],axis=1)
-    predictions = best_tft.predict(new_prediction_data, return_x=True,return_index=True,trainer_kwargs=dict(accelerator="cpu"))
+    predictions = best_tft.predict(new_prediction_data, mode="raw",return_index=True,trainer_kwargs=dict(accelerator="cpu"))
     data_length = len(predictions.index)
     forcast_future_list = []
     for index in tqdm(range(data_length)):
         uniq_id = predictions.index.iloc[index]['unique_id']
         tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
-        tmp_df['y']=predictions.output[index]
+        tmp_df['y_json']=[json.dumps(x) for x in np.array(predictions.output.prediction)[index].tolist()]
+        tmp_df['y']=np.array(predictions.output.prediction)[index,:,3]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
         tmp_df['month'] = tmp_df['month'].astype('int')
@@ -376,10 +383,10 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     forcast_train_df = forcast_train(best_tft,df_filter,val_dataloader,forecast_length)
     print('Begin to insert training forcast data')
     df_to_ch(forcast_train_df,columns=[
-             'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
+             'unique_id', 'year', 'month', 'year_month', 'y','y_json', 'price', 'mount','model'
          ],
          _type='val',
-         table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
+         table='opl_forcasting_month_json',_uuid=_uuid,timestamp=_datetime)
     
     print('Begin to forcast future data')
     price_df=''
@@ -389,10 +396,10 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     forcast_future_df = forcast_future(best_tft,df_filter,forecast_length,price_df)
     print('Begin to insert future forcast data')
     df_to_ch(forcast_future_df,columns=[
-             'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount','model'
+             'unique_id', 'year', 'month', 'year_month', 'y', 'y_json','price', 'mount','model'
          ],
          _type='future',
-         table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
+         table='opl_forcasting_month_json',_uuid=_uuid,timestamp=_datetime)
     
     time_end=time.time()
     print('time cost',time_end-time_start,'s')
