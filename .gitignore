@@ -9,3 +9,4 @@ ipynb_checkpoints/*
 /logs
 /data/*.csv
 /data/.DS_Store
+hparams.yaml
