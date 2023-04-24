@@ -1,4 +1,5 @@
 lightning_logs/*
+lightning_logs/*/*
 *.ckpt
 ipynb_checkpoints/*
 /.DS_Store
