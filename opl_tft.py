@@ -34,7 +34,7 @@ def parse_opt():
                         help='input file')
     parser.add_argument('--uuid',
                         type=str,
-                        default=datetime.date.today(),
+                        default=str(datetime.date.today()),
                         help='uuid')
     parser.add_argument('--forecast',
                         type=int,
