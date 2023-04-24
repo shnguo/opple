@@ -8,6 +8,7 @@ from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 import torch
 import datetime
+import pytorch_forecasting
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
 from pytorch_forecasting.metrics import MAE,SMAPE, PoissonLoss, QuantileLoss
@@ -20,6 +21,7 @@ from tqdm import tqdm
 import gc
 import warnings
 import json
+from torch.utils.data import TensorDataset, ConcatDataset, DataLoader
 warnings.filterwarnings("ignore")
 torch.set_float32_matmul_precision('medium')
 logger = get_logger(os.path.basename(__file__))
@@ -32,7 +34,7 @@ def parse_opt():
                         help='input file')
     parser.add_argument('--uuid',
                         type=str,
-                        default='2023-04-23',
+                        default=datetime.date.today(),
                         help='uuid')
     parser.add_argument('--forecast',
                         type=int,
@@ -141,13 +143,40 @@ def bulid_data_loader(data, forecast,category_col):
         add_relative_time_idx=True,
         add_target_scales=True,
         add_encoder_length=True,
+        # categorical_encoders={'year':pytorch_forecasting.data.encoders.NaNLabelEncoder(add_nan=True)}
+        # allow_missing_timesteps=True
+    )
+    training_full = TimeSeriesDataSet(
+        data,
+        time_idx="time_idx",
+        target="y",
+        group_ids=["unique_id"],
+        min_encoder_length=max_encoder_length //2,  # keep encoder length long (as it is in the validation set)
+        max_encoder_length=max_encoder_length,
+        min_prediction_length=1,
+        max_prediction_length=max_prediction_length,
+        static_categoricals=["unique_id"]+category_col,
+        time_varying_known_categoricals=["month"],
+        time_varying_known_reals=["time_idx", "price"],
+        time_varying_unknown_categoricals=[],
+        time_varying_unknown_reals=[
+            "y",
+            "log_y",
+            "avg_y_by_id",
+        ]+[f'avg_y_by_{c}' for c in category_col],
+        target_normalizer=GroupNormalizer(
+            groups=["unique_id"],
+            transformation="softplus"),  # use softplus and normalize by group
+        add_relative_time_idx=True,
+        add_target_scales=True,
+        add_encoder_length=True,
+        # categorical_encoders={'year':pytorch_forecasting.data.encoders.NaNLabelEncoder(add_nan=True)}
         # allow_missing_timesteps=True
     )
     validation = TimeSeriesDataSet.from_dataset(training, data, predict=True, stop_randomization=True)
-
     # create dataloaders for model
     batch_size = 128 # set this between 32 to 128
-    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
+    train_dataloader = training_full.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
     val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
     return data,training,train_dataloader,val_dataloader
 
@@ -251,7 +280,7 @@ def forcast_train(best_tft,df_filter,val_dataloader,horizon):
     for index in tqdm(range(data_length)):
         uniq_id = predictions.index.iloc[index]['unique_id']
         tmp_df = df_filter[df_filter.unique_id == uniq_id][-horizon:]
-        tmp_df['y_json']=[json.dumps(x) for x in np.array(predictions.output.prediction)[index].tolist()]
+        tmp_df['y_array']=[x for x in np.array(predictions.output.prediction)[index].tolist()]
         tmp_df['y']=np.array(predictions.output.prediction)[index,:,3]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
@@ -298,7 +327,7 @@ def forcast_future(best_tft,df_filter,forecast_length,price_df=None):
     for index in tqdm(range(data_length)):
         uniq_id = predictions.index.iloc[index]['unique_id']
         tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
-        tmp_df['y_json']=[json.dumps(x) for x in np.array(predictions.output.prediction)[index].tolist()]
+        tmp_df['y_array']=[x for x in np.array(predictions.output.prediction)[index].tolist()]
         tmp_df['y']=np.array(predictions.output.prediction)[index,:,3]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
@@ -369,10 +398,16 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     logger.info(f'_uuid={_uuid}')
     df_full = pd.read_csv(file)
     logger.info('Insert opl_ori_data')
-    ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
+    try:
+        ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
+    except Exception as e:
+        logger.error(e)
     df_full,category_col = pre_process(df_full)
     logger.info('Insert opl_pre_data_month')
-    pre_data_to_ch(df_full,_datetime=_datetime)
+    try:
+        pre_data_to_ch(df_full,_datetime=_datetime)
+    except Exception as e:
+        logger.error(e)   
     df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, forecast_length,category_col)
     # print(f'baseline:{baseline_model(val_dataloader)}')
     # train_step_1(training,train_dataloader,val_dataloader)
@@ -383,12 +418,14 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     print('Begin to forcast training data')
     forcast_train_df = forcast_train(best_tft,df_filter,val_dataloader,forecast_length)
     print('Begin to insert training forcast data')
-    df_to_ch(forcast_train_df,columns=[
-             'unique_id', 'year', 'month', 'year_month', 'y','y_json', 'price', 'mount','model'
-         ],
-         _type='val',
-         table='opl_forcasting_month_json',_uuid=_uuid,timestamp=_datetime)
-    
+    try:
+        df_to_ch(forcast_train_df,columns=[
+                'unique_id', 'year', 'month', 'year_month', 'y','y_array', 'price', 'mount','model'
+            ],
+            _type='val',
+            table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
+    except Exception as e:
+        logger.error(e)
     print('Begin to forcast future data')
     price_df=''
     if pricefile:
@@ -396,12 +433,14 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
         price_df = pre_price_data(price_df)
     forcast_future_df = forcast_future(best_tft,df_filter,forecast_length,price_df)
     print('Begin to insert future forcast data')
-    df_to_ch(forcast_future_df,columns=[
-             'unique_id', 'year', 'month', 'year_month', 'y', 'y_json','price', 'mount','model'
+    try:
+        df_to_ch(forcast_future_df,columns=[
+             'unique_id', 'year', 'month', 'year_month', 'y', 'y_array','price', 'mount','model'
          ],
          _type='future',
-         table='opl_forcasting_month_json',_uuid=_uuid,timestamp=_datetime)
-    
+         table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
+    except Exception as e:
+        logger.error(e)
     time_end=time.time()
     print('time cost',time_end-time_start,'s')
     return forcast_train_df,forcast_future_df

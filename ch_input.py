@@ -28,6 +28,7 @@ _test_df = pd.DataFrame({
         5.5812968469126645e-08, 7.156797376950408e-09, 5.819647697080654e-08,
         1.451308122568662e-07, 5.5812968469126645e-08
     ],
+    'y_json':None,
     'mount': [75.37, 75.37, 75.37, 75.37, 75.37, 75.37, 75.37, 75.37],
     'price': [75.37, 75.37, 75.37, 75.37, 75.37, 75.37, 75.37, 75.37],
     'time_idx': [26, 27, 28, 29, 26, 27, 28, 29],
@@ -62,6 +63,7 @@ def df_to_ch(df,
                 database='opple_tsdb',
                 user='admin',
                 password='123456',
+                # port=8123,
                 settings={
                     'use_numpy': True,
                 }) as client:
@@ -71,7 +73,7 @@ def df_to_ch(df,
 
 # df_to_ch(_test_df,
 #          columns=[
-#              'unique_id', 'year', 'month', 'year_month', 'y', 'price', 'mount'
+#              'unique_id', 'year', 'month', 'year_month', 'y','y_json', 'price', 'mount'
 #          ],
 #          _type='test',
 #          table='opl_forcasting_month')
