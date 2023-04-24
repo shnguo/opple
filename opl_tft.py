@@ -173,7 +173,7 @@ def bulid_data_loader(data, forecast,category_col):
         # categorical_encoders={'year':pytorch_forecasting.data.encoders.NaNLabelEncoder(add_nan=True)}
         # allow_missing_timesteps=True
     )
-    validation = TimeSeriesDataSet.from_dataset(training, data, predict=True, stop_randomization=True)
+    validation = TimeSeriesDataSet.from_dataset(training_full, data, predict=True, stop_randomization=True)
     # create dataloaders for model
     batch_size = 128 # set this between 32 to 128
     train_dataloader = training_full.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
