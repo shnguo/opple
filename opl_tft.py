@@ -48,14 +48,14 @@ def parse_opt():
     return opt
 
 
-def pre_process(df):
-    df = df.rename(columns={
+def pre_process(df_full):
+    df = df_full.rename(columns={
         'ymonth': 'year_month',
         'date': 'datetime',
         'item_code': 'unique_id',
         'cml_or_qty': 'y',
         'amount_total':'mount'
-    })
+    }).copy()
     nan_category_col = df.columns[df.isna().all()].tolist()
     category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price'])-set(nan_category_col))
     category_col=['big_class_id', 'pdt', 'second_pdt', 
@@ -402,13 +402,13 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
         ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
     except Exception as e:
         logger.error(e)
-    df_full,category_col = pre_process(df_full)
+    df_full_month,category_col = pre_process(df_full)
     logger.info('Insert opl_pre_data_month')
     try:
-        pre_data_to_ch(df_full,_datetime=_datetime)
+        pre_data_to_ch(df_full_month,_datetime=_datetime)
     except Exception as e:
         logger.error(e)   
-    df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full, forecast_length,category_col)
+    df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full_month, forecast_length,category_col)
     # print(f'baseline:{baseline_model(val_dataloader)}')
     # train_step_1(training,train_dataloader,val_dataloader)
     trainer = train(training,train_dataloader,val_dataloader)
@@ -441,12 +441,17 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
          table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
     except Exception as e:
         logger.error(e)
+    df_full['item_code'] = df_full['item_code'].astype(str)
+    code_name = df_full[['item_code','item_name']].drop_duplicates()
+    code_name.rename(columns={'item_code':'unique_id'},inplace=True)
     time_end=time.time()
     print('time cost',time_end-time_start,'s')
-    return forcast_train_df,forcast_future_df
+    return pd.merge(forcast_train_df,code_name), pd.merge(forcast_future_df,code_name)
 
 
 
 if __name__ == '__main__':
     opt = parse_opt()
-    main(opt.uuid,opt.file,opt.forecast,opt.pricefile)
+    forcast_train_df,forcast_future_df=main(opt.uuid,opt.file,opt.forecast,opt.pricefile)
+    print(forcast_train_df.head())
+    print(forcast_future_df.head())
