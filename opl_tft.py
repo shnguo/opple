@@ -111,20 +111,24 @@ def pre_process(df_full):
 
 def bulid_data_loader(data, forecast,category_col):
     max_prediction_length = forecast
-    max_encoder_length = forecast * 4
+    max_encoder_length = forecast * 12
+    min_encoder_length = forecast * 2
     training_cutoff = data["time_idx"].max() - max_prediction_length
-    filter_date = training_cutoff-max_encoder_length//2
+    filter_date = training_cutoff-min_encoder_length
     id_min_idx = data[data['y']>0].groupby(['unique_id']).time_idx.min()
     # print(id_min_idx[id_min_idx>filter_date].index)
     print(data.shape)
     data = data[~data['unique_id'].isin(id_min_idx[id_min_idx>filter_date].index)]
+    print(data.shape)
+    id_value_count = data[data['y']>0].groupby(['unique_id'])['y'].count()
+    data = data[~data['unique_id'].isin(id_value_count[id_value_count<min_encoder_length].index)]
     print(data.shape)
     training = TimeSeriesDataSet(
         data[lambda x: x.time_idx <= training_cutoff],
         time_idx="time_idx",
         target="y",
         group_ids=["unique_id"],
-        min_encoder_length=max_encoder_length //2,  # keep encoder length long (as it is in the validation set)
+        min_encoder_length=min_encoder_length,  # keep encoder length long (as it is in the validation set)
         max_encoder_length=max_encoder_length,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
@@ -151,7 +155,7 @@ def bulid_data_loader(data, forecast,category_col):
         time_idx="time_idx",
         target="y",
         group_ids=["unique_id"],
-        min_encoder_length=max_encoder_length //2,  # keep encoder length long (as it is in the validation set)
+        min_encoder_length=min_encoder_length,  # keep encoder length long (as it is in the validation set)
         max_encoder_length=max_encoder_length,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
@@ -255,10 +259,10 @@ def train(training,train_dataloader,val_dataloader):
     tft = TemporalFusionTransformer.from_dataset(
         training,
         learning_rate=0.01,
-        hidden_size=16,
-        attention_head_size=2,
+        hidden_size=128,
+        attention_head_size=4,
         dropout=0.1,
-        hidden_continuous_size=8,
+        hidden_continuous_size=128,
         output_size=7,  # 7 quantiles by default
         loss=QuantileLoss(),
         log_interval=-1,  # uncomment for learning rate finder and otherwise, e.g. to 10 for logging every 10 batches
