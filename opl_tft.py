@@ -236,7 +236,7 @@ def train_step_1(training,train_dataloader,val_dataloader):
 def train(training,train_dataloader,val_dataloader):
     pl.seed_everything(42)
         # configure network and trainer
-    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=20, verbose=False, mode="min")
+    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min")
     lr_logger = LearningRateMonitor()  # log the learning rate
     logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
     if torch.cuda.is_available():
