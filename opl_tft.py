@@ -30,7 +30,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--file',
                         type=str,
-                        default='./data/202101-202303.csv',
+                        default='./data/202201-202303_testdata.csv',
                         help='input file')
     parser.add_argument('--uuid',
                         type=str,
@@ -38,7 +38,7 @@ def parse_opt():
                         help='uuid')
     parser.add_argument('--forecast',
                         type=int,
-                        default=4,
+                        default=2,
                         help='forecast month')
     parser.add_argument('--pricefile',
                         type=str,
@@ -56,18 +56,26 @@ def pre_process(df_full):
         'cml_or_qty': 'y',
         'amount_total':'mount'
     }).copy()
+    df['unique_id'] = df['unique_id'].astype(str)
+    df['channel'] = df['channel'].astype(str)
+    df['channel'] = df['channel'].fillna('unknown')
+    df['unique_id_c'] = df.apply(lambda x:x['unique_id']+'_'+x['channel'],axis=1) 
     nan_category_col = df.columns[df.isna().all()].tolist()
     category_col = list(set(df.columns)-set(['year_month','datetime','unique_id','y','mount','unit_price'])-set(nan_category_col))
     category_col=['big_class_id', 'pdt', 'second_pdt', 
-                  'cat_id', 'pro_series', 'office',
+                  'cat_id', 
+                #   'pro_series', 
+                  'office','channel','unique_id'
                    ]
     df.drop(columns=nan_category_col,inplace=True)
-    for c in  category_col+['unique_id']:
+    for c in  category_col+['unique_id_c']:
+        df[c] = df[c].fillna('unknown')
         df[c] = df[c].astype(str)
+    
     logger.info(f'category_col={category_col}')
     df['y'].fillna(0,inplace=True)
     df['mount'].fillna(0,inplace=True)
-    df = df.groupby(['year_month','unique_id']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'})
+    df = df.groupby(['year_month','unique_id_c']+category_col, as_index=False).agg({'y':'sum', 'mount':'sum'})
     # df['y'] = df['y'].apply(lambda x: x if x else 1e-8)
     df['price'] = df['mount'] / (df['y']+1e-8)
     # df['price'] = df.apply(lambda row: row['unit_price'] if row['unit_price'] else row['mount'] / row['y'],axis=1)
@@ -77,29 +85,33 @@ def pre_process(df_full):
     # print(df.head())
     df_year = pd.DataFrame({'year':df['year'].unique(),'j':-1})
     df_month =  pd.DataFrame({'month':range(1,13),'j':-1})
-    df_id = df[['unique_id']+category_col].drop_duplicates()
+    df_id = df[['unique_id_c']+category_col].drop_duplicates()
     df_id['j']=-1
     # df_id = pd.DataFrame({'unique_id':df['unique_id'].unique(),'j':-1})
     df_year_month = pd.merge(df_year,df_month)
-    df_year_month = df_year_month[~((df_year_month['year']==df['year'].max())&(df_year_month['month']>df['year_month'].max().month))]
-    df_year_month_id = pd.merge(df_year_month,df_id)[['year','month','unique_id']+category_col]
+    df_year_month['year_month'] = df_year_month.apply(lambda x:datetime.datetime(x['year'],x['month'],1,0,0),axis=1)
+    # df_year_month = df_year_month[~((df_year_month['year']==df['year'].max())&(df_year_month['month']>df['year_month'].max().month))]
+    df_year_month = df_year_month[~((df_year_month['year_month']>df['year_month'].max())|(df_year_month['year_month']<df['year_month'].min()))]
+    df_year_month_id = pd.merge(df_year_month,df_id)[['year','month','unique_id_c']+category_col]
     print(f'df_year_month_id={len(df_year_month_id)}')
     df = pd.merge(df_year_month_id,df,how='left')
     df['y'].fillna(0,inplace=True)
     df['mount'].fillna(0,inplace=True)
     df['year_month'] = df.apply(lambda x:datetime.date(x['year'],x.month,1),axis=1)
     df = df.sort_values(by=['unique_id','year_month'])
-    df = df.groupby(['unique_id']+category_col, as_index=False).apply(lambda group: group.ffill())
-    df = df.groupby(['unique_id']+category_col, as_index=False).apply(lambda group: group.bfill())
+    df = df.groupby(['unique_id_c']+category_col, as_index=False).apply(lambda group: group.ffill())
+    df = df.groupby(['unique_id_c']+category_col, as_index=False).apply(lambda group: group.bfill())
     df = df.fillna('unkown')
     df["time_idx"] = df["year"] * 12 + df["month"]
     df["time_idx"] -= df["time_idx"].min()
     df["month"] = df["month"].astype(str).astype("category")
     df["year"] = df["year"].astype(str).astype("category")
-    df['unique_id'] = df['unique_id'].astype(str).astype("category")
+    df['unique_id_c'] = df['unique_id_c'].astype(str).astype("category")
     df['y'] = df['y'].astype('float')
     df["log_y"] = np.log(df.y + 1e-8)
     df["avg_y_by_id"] = df.groupby(["unique_id"],
+                                   observed=True).y.transform("mean")
+    df["avg_y_by_channel_id"] = df.groupby(["unique_id",'channel'],
                                    observed=True).y.transform("mean")
     for c in category_col:
         df[c] = df[c].astype(str).astype("category")
@@ -115,34 +127,34 @@ def bulid_data_loader(data, forecast,category_col):
     min_encoder_length = forecast * 2
     training_cutoff = data["time_idx"].max() - max_prediction_length
     filter_date = training_cutoff-min_encoder_length
-    id_min_idx = data[data['y']>0].groupby(['unique_id']).time_idx.min()
+    id_min_idx = data[data['y']>0].groupby(['unique_id_c']).time_idx.min()
     # print(id_min_idx[id_min_idx>filter_date].index)
     print(data.shape)
-    data = data[~data['unique_id'].isin(id_min_idx[id_min_idx>filter_date].index)]
+    data = data[~data['unique_id_c'].isin(id_min_idx[id_min_idx>filter_date].index)]
     print(data.shape)
-    id_value_count = data[data['y']>0].groupby(['unique_id'])['y'].count()
-    data = data[~data['unique_id'].isin(id_value_count[id_value_count<min_encoder_length].index)]
+    id_value_count = data[data['y']>0].groupby(['unique_id_c'])['y'].count()
+    data = data[~data['unique_id_c'].isin(id_value_count[id_value_count<min_encoder_length].index)]
     print(data.shape)
     training = TimeSeriesDataSet(
         data[lambda x: x.time_idx <= training_cutoff],
         time_idx="time_idx",
         target="y",
-        group_ids=["unique_id"],
+        group_ids=["unique_id_c"],
         min_encoder_length=min_encoder_length,  # keep encoder length long (as it is in the validation set)
         max_encoder_length=max_encoder_length,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
-        static_categoricals=["unique_id"]+category_col,
+        static_categoricals=["unique_id_c"]+category_col,
         time_varying_known_categoricals=["month"],
         time_varying_known_reals=["time_idx", "price"],
         time_varying_unknown_categoricals=[],
         time_varying_unknown_reals=[
             "y",
             "log_y",
-            "avg_y_by_id",
+            "avg_y_by_id"
         ]+[f'avg_y_by_{c}' for c in category_col],
         target_normalizer=GroupNormalizer(
-            groups=["unique_id"],
+            groups=["unique_id_c"],
             transformation="softplus"),  # use softplus and normalize by group
         add_relative_time_idx=True,
         add_target_scales=True,
@@ -154,7 +166,7 @@ def bulid_data_loader(data, forecast,category_col):
         data,
         time_idx="time_idx",
         target="y",
-        group_ids=["unique_id"],
+        group_ids=["unique_id_c"],
         min_encoder_length=min_encoder_length,  # keep encoder length long (as it is in the validation set)
         max_encoder_length=max_encoder_length,
         min_prediction_length=1,
@@ -169,7 +181,7 @@ def bulid_data_loader(data, forecast,category_col):
             "avg_y_by_id",
         ]+[f'avg_y_by_{c}' for c in category_col],
         target_normalizer=GroupNormalizer(
-            groups=["unique_id"],
+            groups=["unique_id_c"],
             transformation="softplus"),  # use softplus and normalize by group
         add_relative_time_idx=True,
         add_target_scales=True,
@@ -244,7 +256,7 @@ def train(training,train_dataloader,val_dataloader):
     else:
         accelerator='cpu'
     trainer = pl.Trainer(
-        max_epochs=300,
+        max_epochs=100,
         # max_epochs=3,
         accelerator=accelerator, 
         # devices=0,
@@ -282,17 +294,19 @@ def forcast_train(best_tft,df_filter,val_dataloader,horizon):
     forcast_train_list = []
     data_length = len(predictions.index)
     for index in tqdm(range(data_length)):
-        uniq_id = predictions.index.iloc[index]['unique_id']
-        tmp_df = df_filter[df_filter.unique_id == uniq_id][-horizon:]
+        uniq_id_c = predictions.index.iloc[index]['unique_id_c']
+        tmp_df = df_filter[df_filter.unique_id_c == uniq_id_c][-horizon:]
         tmp_df['y_array']=[x for x in np.array(predictions.output.prediction)[index].tolist()]
         tmp_df['y']=np.array(predictions.output.prediction)[index,:,3]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
         tmp_df['month'] = tmp_df['month'].astype('int')
-        tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
+        tmp_df['unique_id_c'] = tmp_df['unique_id_c'].astype(str)
         tmp_df['model'] = 'TFT'
         forcast_train_list.append(tmp_df)
     forcast_train_df = pd.concat(forcast_train_list,ignore_index=True)
+    forcast_train_df['unique_id'] = forcast_train_df.apply(lambda x:x['unique_id_c'].split('_')[0],axis=1)
+    forcast_train_df['channel'] = forcast_train_df['channel'].astype('str')
     return forcast_train_df
             
 
@@ -329,17 +343,19 @@ def forcast_future(best_tft,df_filter,forecast_length,price_df=None):
     data_length = len(predictions.index)
     forcast_future_list = []
     for index in tqdm(range(data_length)):
-        uniq_id = predictions.index.iloc[index]['unique_id']
-        tmp_df = new_prediction_data[new_prediction_data.unique_id == uniq_id][-forecast_length:]
+        uniq_id_c = predictions.index.iloc[index]['unique_id_c']
+        tmp_df = new_prediction_data[new_prediction_data.unique_id_c == uniq_id_c][-forecast_length:]
         tmp_df['y_array']=[x for x in np.array(predictions.output.prediction)[index].tolist()]
         tmp_df['y']=np.array(predictions.output.prediction)[index,:,3]
         tmp_df['mount'] = tmp_df['y']*tmp_df['price']
         tmp_df['year'] = tmp_df['year'].astype('int')
         tmp_df['month'] = tmp_df['month'].astype('int')
-        tmp_df['unique_id'] = tmp_df['unique_id'].astype(str)
+        tmp_df['unique_id_c'] = tmp_df['unique_id_c'].astype(str)
         tmp_df['model'] = 'TFT'
         forcast_future_list.append(tmp_df)
     forcast_future_df = pd.concat(forcast_future_list,ignore_index=True)
+    forcast_future_df['unique_id'] = forcast_future_df.apply(lambda x:x['unique_id_c'].split('_')[0],axis=1)
+    forcast_future_df['channel'] = forcast_future_df['channel'].astype('str')
     return forcast_future_df
 
 
@@ -360,10 +376,11 @@ def ori_data_to_ch(df_full,_datetime,_uuid=None):
     df_full_copy['date'] = df_full_copy['date'].astype('str')
     df_full_copy['unique_id'] = df_full_copy['unique_id'].astype('str')
     df_full_copy['y'] = df_full_copy['y'].astype('float')
-    
-    # print(df_full_copy.dtypes)
+    df_full_copy['channel'].fillna('unkwoun',inplace=True)
+    df_full_copy['description'].fillna('unkwoun',inplace=True)
+    df_full_copy['channel'] = df_full_copy['channel'].astype('str')
     df_to_ch(df_full_copy,columns=[
-             'unique_id', 'date', 'year_month', 'y', 'price', 'mount','description'
+             'unique_id', 'date', 'year_month', 'y', 'price', 'mount','description','channel'
          ],_uuid=_uuid,timestamp=_datetime,table='opl_ori_data')
 
 def pre_data_to_ch(df_full,_datetime,_uuid=None):
@@ -400,12 +417,13 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     logger.info(f'_datetime={_datetime}')
     _uuid = _uuid
     logger.info(f'_uuid={_uuid}')
-    df_full = pd.read_csv(file)
+    df_full = pd.read_csv(file,dtype={'channel':str})
     logger.info('Insert opl_ori_data')
     try:
         ori_data_to_ch(df_full,_uuid=_uuid,_datetime=_datetime)
     except Exception as e:
         logger.error(e)
+   
     df_full_month,category_col = pre_process(df_full)
     logger.info('Insert opl_pre_data_month')
     try:
@@ -415,6 +433,7 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     df_filter,training,train_dataloader,val_dataloader =  bulid_data_loader(df_full_month, forecast_length,category_col)
     # print(f'baseline:{baseline_model(val_dataloader)}')
     # train_step_1(training,train_dataloader,val_dataloader)
+    print(df_filter.head())
     trainer = train(training,train_dataloader,val_dataloader)
     best_model_path = trainer.checkpoint_callback.best_model_path
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
@@ -424,7 +443,7 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     print('Begin to insert training forcast data')
     try:
         df_to_ch(forcast_train_df,columns=[
-                'unique_id', 'year', 'month', 'year_month', 'y','y_array', 'price', 'mount','model'
+                'unique_id', 'year', 'month', 'year_month', 'y','y_array', 'price', 'mount','model','channel'
             ],
             _type='val',
             table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
@@ -439,7 +458,7 @@ def main(_uuid,file,forecast_length=4,pricefile=None):
     print('Begin to insert future forcast data')
     try:
         df_to_ch(forcast_future_df,columns=[
-             'unique_id', 'year', 'month', 'year_month', 'y', 'y_array','price', 'mount','model'
+             'unique_id', 'year', 'month', 'year_month', 'y', 'y_array','price', 'mount','model','channel'
          ],
          _type='future',
          table='opl_forcasting_month',_uuid=_uuid,timestamp=_datetime)
